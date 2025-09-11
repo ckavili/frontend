@@ -44,10 +44,10 @@ if feature_flags.get("summarization", True):
 else:
     feature_options.append("Summarization (coming soon)")
 
-if feature_flags.get("rag-feature", False):
-    feature_options.append("RAG (Retrieval Augmented Generation)")
+if feature_flags.get("information-search", False):
+    feature_options.append("Information Search")
 else:
-    feature_options.append("RAG (coming soon)")
+    feature_options.append("Information Search (coming soon)")
 
 if feature_flags.get("content-creation", False):
     feature_options.append("Content Creation")
@@ -144,12 +144,12 @@ if feature == "Summarization":
                     except Exception as e:
                         st.error(f"Something went wrong: {e}")
 
-elif feature == "RAG (Retrieval Augmented Generation)":
-    if not feature_flags.get("rag-feature", False):
+elif feature == "Information Search":
+    if not feature_flags.get("information-search", False):
         st.info("This feature is coming soon. Stay tuned!")
     else:
-        st.header("🔍 RAG - Retrieval Augmented Generation")
-        
+        st.header("🔍 Information Search")
+
         # Token count and limit
         MAX_TOKENS = 4096
         user_input = st.text_area("Ask your question:", height=150, key="rag_text")
@@ -162,7 +162,7 @@ elif feature == "RAG (Retrieval Augmented Generation)":
         if st.button("🔄 Calculate tokens left", key="calc_tokens_rag", help="Calculate tokens"):
             st.rerun()
 
-        if st.button("Ask RAG 🔍"):
+        if st.button("Ask Our Internal Documents 🔍"):
             if not user_input.strip():
                 st.warning("Please enter a question.")
             elif not BACKEND_ENDPOINT:
@@ -180,7 +180,7 @@ elif feature == "RAG (Retrieval Augmented Generation)":
                         }
 
                         with requests.post(
-                            urljoin(BACKEND_ENDPOINT, "/rag"),
+                            urljoin(BACKEND_ENDPOINT, "/information-search"),
                             json=payload,
                             headers=headers,
                             stream=True,
@@ -188,7 +188,7 @@ elif feature == "RAG (Retrieval Augmented Generation)":
                         ) as response:
                             response.raise_for_status()
                             answer = ""
-                            st.success("Here's your RAG answer:")
+                            st.success("Here's your Information Search answer:")
                             answer_box = st.empty()
 
                             for line in response.iter_lines():
@@ -202,7 +202,7 @@ elif feature == "RAG (Retrieval Augmented Generation)":
                                         delta = data.get("delta")
                                         if delta:
                                             answer += delta
-                                            answer_box.text_area("RAG Answer", answer, height=200)
+                                            answer_box.text_area("Information Search Answer", answer, height=200)
 
                     except Exception as e:
                         st.error(f"Something went wrong: {e}")

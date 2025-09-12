@@ -45,6 +45,16 @@
       },
       "required": ["name", "tag"],
       "additionalProperties": false
+    },
+    "chart_path": {
+      "type": "string",
+      "description": "Target namespace for deployment (format: userX-environment)",
+      "examples": []
+    },
+    "repo_url": {
+      "type": "string",
+      "description": "Target namespace for deployment (format: userX-environment)",
+      "examples": []
     }
   },
   "required": [

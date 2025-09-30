@@ -13,7 +13,7 @@
     "MODEL_NAME": {
       "type": "string",
       "description": "Name of the model to be used",
-      "default": "llama32-full",
+      "default": "llama32",
       "minLength": 1
     },
     "LLM_ENDPOINT": {

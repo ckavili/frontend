@@ -20,7 +20,7 @@ The following table lists the configurable parameters and their default values:
 |-----------|-------------|---------|
 | `LLM_ENDPOINT` | Language model endpoint URL | `""` |
 | `SYSTEM_PROMPT` | Default system prompt for the model | `"Summarize this text."` |
-| `MODEL_NAME` | Name of the model to use | `"llama32-full"` |
+| `MODEL_NAME` | Name of the model to use | `"llama32"` |
 | `BACKEND_ENDPOINT` | Name of the llamastack backend | `""` |
 | `image.name` | Name of the image | `"canopy-ui"` |
 | `image.tag` | Tag of the image | `"simple-0.1"` |

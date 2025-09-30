@@ -1,5 +1,5 @@
 SYSTEM_PROMPT: "Summarize this text." 
-MODEL_NAME: "llama32-full"
+MODEL_NAME: "llama32"
 LLM_ENDPOINT: "http://localhost:8000"
 BACKEND_ENDPOINT: ""
 image:

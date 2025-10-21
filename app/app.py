@@ -137,9 +137,13 @@ if feature == "Summarization":
                                             break
                                         data = json.loads(data_str)
                                         delta = data.get("delta")
+                                        error = data.get("error")
                                         if delta:
                                             summary += delta
                                             summary_box.text_area("Summary", summary, height=200)
+                                        elif error:
+                                            st.error(f"⚠️ {error}")
+                                            break
 
                     except Exception as e:
                         st.error(f"Something went wrong: {e}")
@@ -200,9 +204,13 @@ elif feature == "RAG (Retrieval Augmented Generation)":
                                             break
                                         data = json.loads(data_str)
                                         delta = data.get("delta")
+                                        error = data.get("error")
                                         if delta:
                                             answer += delta
                                             answer_box.text_area("RAG Answer", answer, height=200)
+                                        elif error:
+                                            st.error(f"⚠️ {error}")
+                                            break
 
                     except Exception as e:
                         st.error(f"Something went wrong: {e}")

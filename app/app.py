@@ -36,6 +36,7 @@ st.sidebar.title("Canopy 🌿")
 
 # Get feature flags from backend
 feature_flags = get_feature_flags()
+print(feature_flags)
 
 # Build feature options based on feature flags
 feature_options = []
@@ -58,6 +59,11 @@ if feature_flags.get("assignment-scoring", False):
     feature_options.append("Assignment Scoring")
 else:
     feature_options.append("Assignment Scoring (coming soon)")
+
+if feature_flags.get("student-assistant", False):
+    feature_options.append("Student Assistant")
+else:
+    feature_options.append("Student Assistant (coming soon)")
 
 feature = st.sidebar.radio(
     "What do you want to do:",
@@ -203,6 +209,104 @@ elif feature == "Information Search":
                                         if delta:
                                             answer += delta
                                             answer_box.text_area("Information Search Answer", answer, height=200)
+
+                    except Exception as e:
+                        st.error(f"Something went wrong: {e}")
+
+elif feature == "Student Assistant":
+    if not feature_flags.get("student-assistant", False):
+        st.info("This feature is coming soon. Stay tuned!")
+    else:
+        st.header("🎓 Student Assistant")
+        st.markdown("Ask me anything! I can search the knowledge base, find professors, and help schedule meetings.")
+
+        MAX_TOKENS = 4096
+        user_input = st.text_area("Your question:", height=150, key="student_assistant_text")
+        approx_token_count = len(user_input) // 4
+        tokens_left = MAX_TOKENS - approx_token_count - 50
+
+        color = "red" if tokens_left <= 0 else ("orange" if tokens_left < 100 else "green")
+        st.markdown(f"<span style='color:{color}; font-size: 0.9em;'>🧮 Tokens left: {tokens_left}</span>", unsafe_allow_html=True)
+        if st.button("🔄 Calculate tokens left", key="calc_tokens_student_assistant", help="Calculate tokens"):
+            st.rerun()
+
+        if st.button("Ask 🎓"):
+            if not user_input.strip():
+                st.warning("Please enter a question.")
+            elif not BACKEND_ENDPOINT:
+                st.error("BACKEND_ENDPOINT not configured in environment variables.")
+            elif tokens_left <= 0:
+                st.error("Your question is too long. Please shorten it to stay within the token limit.")
+            else:
+                with st.spinner("Thinking..."):
+                    try:
+                        payload = {"prompt": user_input}
+                        headers = {"Content-Type": "application/json"}
+
+                        with requests.post(
+                            urljoin(BACKEND_ENDPOINT, "/student-assistant"),
+                            json=payload,
+                            headers=headers,
+                            stream=True,
+                            timeout=120
+                        ) as response:
+                            response.raise_for_status()
+
+                            # Create containers for different sections
+                            tool_calls_section = st.expander("🔧 Tool Calls & Actions", expanded=True)
+                            answer_section = st.container()
+
+                            tool_calls_list = []  # Track individual tool call entries
+                            answer = ""
+                            answer_box = None
+                            in_final_answer = False
+
+                            for line in response.iter_lines():
+                                if line:
+                                    line = line.decode("utf-8")
+                                    if line.startswith("data: "):
+                                        data_str = line.removeprefix("data: ")
+                                        if data_str == "[DONE]":
+                                            break
+
+                                        data = json.loads(data_str)
+                                        event_type = data.get("type")
+
+                                        print(data)
+
+                                        if event_type == "tool_call":
+                                            to_add = f"🔧 **Calling tool:** `{data.get('name')}`\n   Args: `{json.dumps(data.get('args'))}`\n"
+                                            tool_calls_section.markdown(to_add)
+
+                                        elif event_type == "mcp_call":
+                                            mcp_text = f"🔧 **MCP Tool:** `{data.get('name')}` (MCP server: {data.get('server_label')})\n   Args: `{json.dumps(data.get('arguments'))}`\n"
+                                            if data.get('output'):
+                                                output = str(data.get('output'))
+                                                mcp_text += f"   Output: {output}\n"
+                                            elif data.get('error'):
+                                                mcp_text += f"   ⚠️ Error: {data.get('error')}\n"
+                                            to_add = mcp_text
+                                            tool_calls_section.markdown(to_add)
+
+                                        elif event_type == "tool_result":
+                                            content = data.get('content', '')
+                                            tool_calls_section.markdown(f"📦 **Tool result** (`{data.get('name')}`):")
+                                            # Use code block without height limit
+                                            tool_calls_section.code(content, language=None, wrap_lines=True)
+
+                                        elif event_type == "final_answer":
+                                            in_final_answer = True
+                                            answer_section.success("💡 Final Response:")
+                                            answer_box = answer_section.empty()
+
+                                        elif data.get("delta") and in_final_answer:
+                                            answer += data.get("delta")
+                                            if answer_box:
+                                                # Calculate dynamic height based on content
+                                                line_count = answer.count('\n') + 1
+                                                estimated_lines = max(line_count, len(answer) // 80)  # Assume ~80 chars per line
+                                                dynamic_height = min(max(estimated_lines * 25, 150), 600)  # Between 150 and 600px
+                                                answer_box.markdown(f"**Response:**\n\n{answer}")
 
                     except Exception as e:
                         st.error(f"Something went wrong: {e}")

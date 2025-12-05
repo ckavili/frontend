@@ -50,16 +50,6 @@ if feature_flags.get("information-search", False):
 else:
     feature_options.append("Information Search (coming soon)")
 
-if feature_flags.get("content-creation", False):
-    feature_options.append("Content Creation")
-else:
-    feature_options.append("Content Creation (coming soon)")
-
-if feature_flags.get("assignment-scoring", False):
-    feature_options.append("Assignment Scoring")
-else:
-    feature_options.append("Assignment Scoring (coming soon)")
-
 if feature_flags.get("student-assistant", False):
     feature_options.append("Student Assistant")
 else:
@@ -311,7 +301,5 @@ elif feature == "Student Assistant":
                     except Exception as e:
                         st.error(f"Something went wrong: {e}")
 
-elif feature in ["Content Creation", "Assignment Scoring"] or "coming soon" in feature:
-    st.info("This feature is coming soon. Stay tuned!")
 else:
     st.info("This feature is coming soon. Stay tuned!")

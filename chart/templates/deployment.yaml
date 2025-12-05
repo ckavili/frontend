@@ -34,3 +34,7 @@ spec:
             - name: BACKEND_ENDPOINT
               value: "{{ .Values.BACKEND_ENDPOINT }}"
           {{- end }}
+            - name: OTEL_TRACES_SAMPLER_ARG
+              value: "1.0"
+            - name: OTEL_LOGS_EXPORTER
+              value: "none"

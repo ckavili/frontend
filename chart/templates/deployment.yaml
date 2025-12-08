@@ -16,6 +16,7 @@ spec:
     metadata:
       labels:
         app: canopy-ui
+        monitoring.opendatahub.io/scrape: 'true'
     spec:
       containers:
         - name: canopy-ui

@@ -132,6 +132,14 @@ if feature == "Summarization":
                                         if data_str == "[DONE]":
                                             break
                                         data = json.loads(data_str)
+                                        # Handle shield violation
+                                        if data.get("type") == "shield_violation":
+                                            summary_box.warning(f"🛡️ {data.get('message', 'Content blocked by safety shields')}")
+                                            break
+                                        # Handle error
+                                        if data.get("error"):
+                                            summary_box.error(f"Error: {data.get('error')}")
+                                            break
                                         delta = data.get("delta")
                                         if delta:
                                             summary += delta

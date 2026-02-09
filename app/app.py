@@ -8,6 +8,25 @@ from urllib.parse import urljoin
 # Load environment variables
 BACKEND_ENDPOINT = os.getenv("BACKEND_ENDPOINT", "http://localhost:8000")
 
+def submit_feedback(input_text, response_text, rating, feature="summarize"):
+    """Submit feedback to the backend."""
+    try:
+        payload = {
+            "input_text": input_text,
+            "response_text": response_text,
+            "rating": rating,
+            "feature": feature,
+        }
+        resp = requests.post(
+            urljoin(BACKEND_ENDPOINT, "/feedback"),
+            json=payload,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        return {"error": str(e)}
+
 # Cache feature flags to avoid repeated requests
 @st.cache_data(ttl=300)  # Cache for 5 minutes
 def get_feature_flags():
@@ -145,8 +164,52 @@ if feature == "Summarization":
                                             summary += delta
                                             summary_box.text_area("Summary", summary, height=200)
 
+                            # Save to session state for feedback buttons (survive Streamlit reruns)
+                            if summary:
+                                st.session_state["last_summary"] = summary
+                                st.session_state["last_summary_input"] = user_input
+                                st.session_state.pop("summary_feedback_sent", None)
+
                     except Exception as e:
                         st.error(f"Something went wrong: {e}")
+
+        # Show feedback buttons if a summary exists and feedback feature is enabled
+        if st.session_state.get("last_summary") and feature_flags.get("feedback", False):
+            st.markdown("---")
+            st.markdown("**Was this summary helpful?**")
+
+            if "summary_feedback_sent" not in st.session_state:
+                col1, col2, col3 = st.columns([1, 1, 6])
+                with col1:
+                    if st.button("👍", key="thumbs_up_sum"):
+                        result = submit_feedback(
+                            st.session_state["last_summary_input"],
+                            st.session_state["last_summary"],
+                            "thumbs_up",
+                        )
+                        if "error" not in result:
+                            st.session_state["summary_feedback_sent"] = "thumbs_up"
+                            st.rerun()
+                        else:
+                            st.error(f"Failed to send feedback: {result['error']}")
+                with col2:
+                    if st.button("👎", key="thumbs_down_sum"):
+                        result = submit_feedback(
+                            st.session_state["last_summary_input"],
+                            st.session_state["last_summary"],
+                            "thumbs_down",
+                        )
+                        if "error" not in result:
+                            st.session_state["summary_feedback_sent"] = "thumbs_down"
+                            st.rerun()
+                        else:
+                            st.error(f"Failed to send feedback: {result['error']}")
+            else:
+                rating = st.session_state["summary_feedback_sent"]
+                if rating == "thumbs_up":
+                    st.success("Thanks for the positive feedback!")
+                else:
+                    st.info("Thanks for the feedback! We'll use it to improve.")
 
 elif feature == "Information Search":
     if not feature_flags.get("information-search", False):

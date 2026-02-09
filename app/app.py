@@ -27,6 +27,27 @@ def submit_feedback(input_text, response_text, rating, feature="summarize"):
     except Exception as e:
         return {"error": str(e)}
 
+def submit_ab_feedback(input_text, response_a, response_b, preference, prompt_mapping, feature="summarize"):
+    """Submit A/B comparison feedback to the backend."""
+    try:
+        payload = {
+            "input_text": input_text,
+            "response_a": response_a,
+            "response_b": response_b,
+            "preference": preference,
+            "prompt_mapping": prompt_mapping,
+            "feature": feature,
+        }
+        resp = requests.post(
+            urljoin(BACKEND_ENDPOINT, "/feedback/ab"),
+            json=payload,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        return {"error": str(e)}
+
 # Cache feature flags to avoid repeated requests
 @st.cache_data(ttl=300)  # Cache for 5 minutes
 def get_feature_flags():
@@ -114,6 +135,8 @@ if feature == "Summarization":
         if st.button("🔄 Calculate tokens left", key="calc_tokens_sum", help="Calculate tokens"):
             st.rerun()
 
+        ab_enabled = feature_flags.get("ab_testing", False)
+
         if st.button("Summarize 🌿"):
             if not user_input.strip():
                 st.warning("Please enter some text to summarize.")
@@ -121,7 +144,68 @@ if feature == "Summarization":
                 st.error("BACKEND_ENDPOINT not configured in environment variables.")
             elif tokens_left <= 0:
                 st.error("Your text is too long. Please shorten it to stay within the token limit.")
+            elif ab_enabled:
+                # A/B mode: show two columns with both prompts
+                with st.spinner("Running both prompts..."):
+                    try:
+                        payload = {"prompt": user_input}
+                        headers = {"Content-Type": "application/json"}
+
+                        with requests.post(
+                            urljoin(BACKEND_ENDPOINT, "/summarize/ab"),
+                            json=payload,
+                            headers=headers,
+                            stream=True,
+                            timeout=120
+                        ) as response:
+                            response.raise_for_status()
+
+                            col_a, col_b = st.columns(2)
+                            with col_a:
+                                st.markdown("**Response A**")
+                                box_a = st.empty()
+                            with col_b:
+                                st.markdown("**Response B**")
+                                box_b = st.empty()
+
+                            text_a = ""
+                            text_b = ""
+                            ab_mapping = {}
+
+                            for line in response.iter_lines():
+                                if line:
+                                    line = line.decode("utf-8")
+                                    if line.startswith("data: "):
+                                        data_str = line.removeprefix("data: ")
+                                        if data_str == "[DONE]":
+                                            break
+                                        data = json.loads(data_str)
+
+                                        if data.get("type") == "ab_config":
+                                            ab_mapping = data.get("mapping", {})
+                                            continue
+
+                                        variant = data.get("variant")
+                                        delta = data.get("delta", "")
+                                        if variant == "a" and delta:
+                                            text_a += delta
+                                            box_a.text_area("A", text_a, height=200, key=f"ab_a_{len(text_a)}")
+                                        elif variant == "b" and delta:
+                                            text_b += delta
+                                            box_b.text_area("B", text_b, height=200, key=f"ab_b_{len(text_b)}")
+
+                            # Save to session state
+                            if text_a and text_b:
+                                st.session_state["ab_response_a"] = text_a
+                                st.session_state["ab_response_b"] = text_b
+                                st.session_state["ab_mapping"] = ab_mapping
+                                st.session_state["ab_input"] = user_input
+                                st.session_state.pop("ab_feedback_sent", None)
+
+                    except Exception as e:
+                        st.error(f"Something went wrong: {e}")
             else:
+                # Standard single-prompt mode
                 with st.spinner("Talking to the forest spirits..."):
                     try:
                         payload = {
@@ -173,8 +257,45 @@ if feature == "Summarization":
                     except Exception as e:
                         st.error(f"Something went wrong: {e}")
 
-        # Show feedback buttons if a summary exists and feedback feature is enabled
-        if st.session_state.get("last_summary") and feature_flags.get("feedback", False):
+        # A/B preference buttons
+        if ab_enabled and st.session_state.get("ab_response_a") and st.session_state.get("ab_response_b"):
+            if "ab_feedback_sent" not in st.session_state:
+                st.markdown("**Which response is better?**")
+                pref_col1, pref_col2 = st.columns(2)
+                with pref_col1:
+                    if st.button("A is better", key="ab_pref_a"):
+                        result = submit_ab_feedback(
+                            st.session_state["ab_input"],
+                            st.session_state["ab_response_a"],
+                            st.session_state["ab_response_b"],
+                            "a",
+                            st.session_state["ab_mapping"],
+                        )
+                        if "error" not in result:
+                            st.session_state["ab_feedback_sent"] = "a"
+                            st.rerun()
+                        else:
+                            st.error(f"Failed to send feedback: {result['error']}")
+                with pref_col2:
+                    if st.button("B is better", key="ab_pref_b"):
+                        result = submit_ab_feedback(
+                            st.session_state["ab_input"],
+                            st.session_state["ab_response_a"],
+                            st.session_state["ab_response_b"],
+                            "b",
+                            st.session_state["ab_mapping"],
+                        )
+                        if "error" not in result:
+                            st.session_state["ab_feedback_sent"] = "b"
+                            st.rerun()
+                        else:
+                            st.error(f"Failed to send feedback: {result['error']}")
+            else:
+                pref = st.session_state["ab_feedback_sent"]
+                st.success(f"Thanks! You preferred Response {pref.upper()}.")
+
+        # Show feedback buttons if a summary exists and feedback feature is enabled (standard mode only)
+        if not ab_enabled and st.session_state.get("last_summary") and feature_flags.get("feedback", False):
             st.markdown("---")
             st.markdown("**Was this summary helpful?**")
 

@@ -105,6 +105,7 @@ feature = st.sidebar.radio(
 st.markdown("""
     <style>
     * {opacity:100% !important;}
+    [data-testid="stSidebarNav"] {display: none;}
     </style>
     """, unsafe_allow_html=True)
 st.markdown("""

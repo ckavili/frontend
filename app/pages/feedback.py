@@ -13,6 +13,11 @@ st.set_page_config(
 )
 
 st.markdown("""
+    <style>
+    [data-testid="stSidebarNav"] {display: none;}
+    </style>
+""", unsafe_allow_html=True)
+st.markdown("""
     <div style='text-align: center;'>
         <h1 style='color: #2e8b57;'>Canopy - Feedback Dashboard</h1>
         <p style='font-size: 1.2em;'>Review user feedback and export evaluation datasets 📊</p>

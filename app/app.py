@@ -507,7 +507,7 @@ elif feature == "Socratic Tutor":
         st.markdown("Ask me your question and I'll guide you to discover the answer through thoughtful questioning!")
 
         # Token count and limit (approximate: 1 token ≈ 4 characters in English)
-        MAX_TOKENS = 4096  # Matching backend max_tokens
+        MAX_TOKENS = 1500  # Matching backend max_tokens
         user_input = st.text_area("What would you like to learn about?", height=300, key="socratic_text")
         approx_token_count = len(user_input) // 4
         tokens_left = MAX_TOKENS - approx_token_count - 50  # buffer for response

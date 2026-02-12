@@ -95,6 +95,11 @@ if feature_flags.get("student-assistant", False):
 else:
     feature_options.append("Student Assistant (coming soon)")
 
+if feature_flags.get("socratic-tutor", False):
+    feature_options.append("Socratic Tutor")
+else:
+    feature_options.append("Socratic Tutor (coming soon)")
+
 feature = st.sidebar.radio(
     "What do you want to do:",
     feature_options,
@@ -490,6 +495,75 @@ elif feature == "Student Assistant":
                                                 estimated_lines = max(line_count, len(answer) // 80)  # Assume ~80 chars per line
                                                 dynamic_height = min(max(estimated_lines * 25, 150), 600)  # Between 150 and 600px
                                                 answer_box.markdown(f"**Response:**\n\n{answer}")
+
+                    except Exception as e:
+                        st.error(f"Something went wrong: {e}")
+
+elif feature == "Socratic Tutor":
+    if not feature_flags.get("socratic-tutor", False):
+        st.info("This feature is coming soon. Stay tuned!")
+    else:
+        st.header("🎓 Socratic Tutor")
+        st.markdown("Ask me your question and I'll guide you to discover the answer through thoughtful questioning!")
+
+        # Token count and limit (approximate: 1 token ≈ 4 characters in English)
+        MAX_TOKENS = 1500  # Matching backend max_tokens
+        user_input = st.text_area("What would you like to learn about?", height=300, key="socratic_text")
+        approx_token_count = len(user_input) // 4
+        tokens_left = MAX_TOKENS - approx_token_count - 50  # buffer for response
+
+        # Token display with calculate button
+        color = "red" if tokens_left <= 0 else ("orange" if tokens_left < 100 else "green")
+
+        st.markdown(f"<span style='color:{color}; font-size: 0.9em;'>🧮 Tokens left: {tokens_left}</span>", unsafe_allow_html=True)
+        if st.button("🔄 Calculate tokens left", key="calc_tokens_socratic", help="Calculate tokens"):
+            st.rerun()
+
+        if st.button("Ask the Tutor 🎓"):
+            if not user_input.strip():
+                st.warning("Please enter your question to get started.")
+            elif not BACKEND_ENDPOINT:
+                st.error("BACKEND_ENDPOINT not configured in environment variables.")
+            elif tokens_left <= 0:
+                st.error("Your text is too long. Please shorten it to stay within the token limit.")
+            else:
+                with st.spinner("Your Socratic tutor is thinking..."):
+                    try:
+                        payload = {
+                            "prompt": user_input
+                        }
+                        headers = {
+                            "Content-Type": "application/json",
+                        }
+
+                        with requests.post(
+                            urljoin(BACKEND_ENDPOINT, "/socratic-tutor"),
+                            json=payload,
+                            headers=headers,
+                            stream=True,
+                            timeout=120
+                        ) as response:
+                            response.raise_for_status()
+                            tutor_response = ""
+                            st.success("Here's what your tutor has to say:")
+                            response_box = st.empty()
+
+                            for line in response.iter_lines():
+                                if line:
+                                    line = line.decode("utf-8")
+                                    if line.startswith("data: "):
+                                        data_str = line.removeprefix("data: ")
+                                        if data_str == "[DONE]":
+                                            break
+                                        data = json.loads(data_str)
+                                        # Handle error
+                                        if data.get("error"):
+                                            response_box.error(f"Error: {data.get('error')}")
+                                            break
+                                        delta = data.get("delta")
+                                        if delta:
+                                            tutor_response += delta
+                                            response_box.text_area("Tutor Response", tutor_response, height=200)
 
                     except Exception as e:
                         st.error(f"Something went wrong: {e}")

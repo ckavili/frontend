@@ -15,7 +15,8 @@ spec:
   template:
     metadata:
       annotations:
-        instrumentation.opentelemetry.io/inject-python: redhat-ods-monitoring/data-science-instrumentation
+        # Use local instrumentation CR for traces (metrics stay with RHOAI)
+        instrumentation.opentelemetry.io/inject-python: "true"
       labels:
         app: canopy-ui
         monitoring.opendatahub.io/scrape: 'true'
@@ -39,13 +40,16 @@ spec:
           {{- end }}
             - name: OTEL_TRACES_SAMPLER_ARG
               value: "1.0"
-            - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
-              value: "http://data-science-collector-collector-headless.redhat-ods-monitoring.svc.cluster.local:4318/v1/traces"
-            - name: OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
-              value: "http://data-science-collector-collector-headless.redhat-ods-monitoring.svc.cluster.local:4318/v1/metrics"
             - name: OTEL_LOGS_EXPORTER
               value: "none"
+            # TRACES go to user's toolings namespace collector
+            - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+              value: "http://trace-collector-collector.{{ .Values.toolingsNamespace | default (printf "%s-toolings" (trimSuffix "-canopy" .Release.Namespace | trimSuffix "-test" | trimSuffix "-prod")) }}.svc.cluster.local:4318/v1/traces"
+            # METRICS stay with RHOAI (unchanged)
+            - name: OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
+              value: "http://data-science-collector-collector-headless.redhat-ods-monitoring.svc.cluster.local:4318/v1/metrics"
+            # General endpoint for traces
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "http://data-science-collector-collector-headless.redhat-ods-monitoring.svc.cluster.local:4318"
+              value: "http://trace-collector-collector.{{ .Values.toolingsNamespace | default (printf "%s-toolings" (trimSuffix "-canopy" .Release.Namespace | trimSuffix "-test" | trimSuffix "-prod")) }}.svc.cluster.local:4318"
             - name: TELEMETRY_SINKS
               value: "otel_trace"

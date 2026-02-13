@@ -26,7 +26,7 @@ st.sidebar.image(logo, use_container_width=True)
 st.sidebar.title("Canopy 🌿")
 feature = st.sidebar.radio(
     "What do you want to do:",
-    ["Summarization", "Content Creation (coming soon)", "Assignment Scoring (coming soon)"],
+    ["Summarization", "Information Search (coming soon)", "Student Assistant (coming soon)", "Socratic Tutor (coming soon)"],
     index=0
 )
 

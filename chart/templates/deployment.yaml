@@ -12,6 +12,7 @@ spec:
   selector:
     matchLabels:
       app: canopy-ui
+      app.kubernetes.io/name: canopy-ui
   template:
     metadata:
       annotations:
@@ -19,6 +20,7 @@ spec:
         instrumentation.opentelemetry.io/inject-python: "true"
       labels:
         app: canopy-ui
+        app.kubernetes.io/name: canopy-ui
         monitoring.opendatahub.io/scrape: 'true'
     spec:
       containers:

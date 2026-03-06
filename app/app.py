@@ -49,7 +49,7 @@ def submit_ab_feedback(input_text, response_a, response_b, preference, prompt_ma
         return {"error": str(e)}
 
 # Cache feature flags to avoid repeated requests
-@st.cache_data(ttl=300)  # Cache for 5 minutes
+@st.cache_data(ttl=30)  # Cache for 30 seconds (checks more frequently)
 def get_feature_flags():
     """Fetch feature flags from backend"""
     try:
@@ -71,7 +71,7 @@ st.set_page_config(
 # Sidebar navigation
 logo_path = "logo.png"
 logo = Image.open(logo_path)
-st.sidebar.image(logo, use_container_width=True)
+st.sidebar.image(logo, width='stretch')
 st.sidebar.title("Canopy 🌿")
 
 # Get feature flags from backend
@@ -111,6 +111,11 @@ st.markdown("""
     <style>
     * {opacity:100% !important;}
     [data-testid="stSidebarNav"] {display: none;}
+    /* Force chat message text to be black */
+    .stTextArea textarea {
+        color: #000000 !important;
+        background-color: #ffffff !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 st.markdown("""
@@ -126,217 +131,162 @@ if feature == "Summarization":
     if not feature_flags.get("summarization", True):
         st.info("This feature is coming soon. Stay tuned!")
     else:
-        st.header("🌱 Summarize My Text")
+        st.header("🌱 Chat with Summarizer")
+        st.markdown("Have a conversation with the AI. Ask questions, request summaries, or continue the discussion!")
 
-        # Token count and limit (approximate: 1 token ≈ 4 characters in English)
-        MAX_TOKENS = 4096  # Matching backend max_tokens
-        user_input = st.text_area("Paste your text here:", height=300, key="user_text")
-        approx_token_count = len(user_input) // 4
-        tokens_left = MAX_TOKENS - approx_token_count - 50  # buffer for response
+        # Initialize chat history and flags in session state
+        if "chat_history" not in st.session_state:
+            st.session_state.chat_history = []
+        if "awaiting_response" not in st.session_state:
+            st.session_state.awaiting_response = False
 
-        # Token display with calculate button
-        color = "red" if tokens_left <= 0 else ("orange" if tokens_left < 100 else "green")
+        # Display chat history
+        chat_container = st.container()
+        with chat_container:
+            for i, msg in enumerate(st.session_state.chat_history):
+                if msg["role"] == "user":
+                    # Escape HTML and ensure black text
+                    safe_content = msg["content"].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;")
+                    # Use <br> for line breaks
+                    safe_content = safe_content.replace("\n", "<br>")
+                    st.markdown(f"""
+                    <div style='background-color: #e3f2fd; padding: 12px 15px; border-radius: 15px; margin: 8px 0; max-width: 80%; margin-left: auto;'>
+                        <strong style='color: #1565c0;'>You</strong><br>
+                        <span style='color: #000000;'>{safe_content}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    # Escape HTML characters and ensure black text
+                    safe_content = msg["content"].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;")
+                    safe_content = safe_content.replace("\n", "<br>")
+                    st.markdown(f"""
+                    <div style='background-color: #f1f8e9; padding: 12px 15px; border-radius: 15px; margin: 8px 0; max-width: 80%;'>
+                        <strong style='color: #558b2f;'>Assistant</strong><br>
+                        <span style='color: #000000;'>{safe_content}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
 
-        st.markdown(f"<span style='color:{color}; font-size: 0.9em;'>🧮 Tokens left: {tokens_left}</span>", unsafe_allow_html=True)
-        if st.button("🔄 Calculate tokens left", key="calc_tokens_sum", help="Calculate tokens"):
+            # Handle streaming response if awaiting
+            if st.session_state.awaiting_response:
+                streaming_placeholder = st.empty()
+
+                # Fetch the response
+                try:
+                    messages = [{"role": msg["role"], "content": msg["content"]} for msg in st.session_state.chat_history]
+                    payload = {"messages": messages}
+                    headers = {"Content-Type": "application/json"}
+
+                    with requests.post(
+                        urljoin(BACKEND_ENDPOINT, "/summarize/chat"),
+                        json=payload,
+                        headers=headers,
+                        stream=True,
+                        timeout=120
+                    ) as response:
+                        response.raise_for_status()
+                        assistant_response = ""
+
+                        for line in response.iter_lines():
+                            if line:
+                                line = line.decode("utf-8")
+                                if line.startswith("data: "):
+                                    data_str = line.removeprefix("data: ")
+                                    if data_str == "[DONE]":
+                                        break
+
+                                    try:
+                                        data = json.loads(data_str)
+                                    except json.JSONDecodeError:
+                                        continue
+
+                                    if data.get("type") == "shield_violation":
+                                        assistant_response = f"🛡️ {data.get('message', 'Content blocked by safety shields')}"
+                                        break
+
+                                    if data.get("error"):
+                                        assistant_response = f"Error: {data.get('error')}"
+                                        break
+
+                                    delta = data.get("delta")
+                                    if delta:
+                                        assistant_response += delta
+                                        # Escape HTML and show in green bubble
+                                        safe_content = assistant_response.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;").replace("\n", "<br>")
+                                        streaming_placeholder.markdown(f"""
+                                        <div style='background-color: #f1f8e9; padding: 12px 15px; border-radius: 15px; margin: 8px 0; max-width: 80%; min-height: 50px;'>
+                                            <strong style='color: #558b2f;'>Assistant</strong><br>
+                                            <span style='color: #000000;'>{safe_content}</span>
+                                        </div>
+                                        """, unsafe_allow_html=True)
+
+                        # Save complete response
+                        if assistant_response:
+                            st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
+                        st.session_state.awaiting_response = False
+                        st.rerun()
+
+                except Exception as e:
+                    st.error(f"Something went wrong: {e}")
+                    st.session_state.awaiting_response = False
+                    # Remove the user message if there was an error
+                    if st.session_state.chat_history and st.session_state.chat_history[-1]["role"] == "user":
+                        st.session_state.chat_history.pop()
+                    st.rerun()
+
+        # Add some spacing
+        st.markdown("---")
+
+        # Input section at the bottom (always shown)
+        MAX_TOKENS = 4096
+
+        # Use session state for input clearing
+        if "input_key" not in st.session_state:
+            st.session_state.input_key = 0
+
+        user_input = st.text_area("Your message:", height=100, key=f"chat_input_{st.session_state.input_key}", placeholder="Type your message here...")
+
+        col1, col2, col3 = st.columns([2, 1, 1])
+        with col1:
+            # Calculate tokens based on entire conversation + current message
+            total_conversation = "\n".join([msg["content"] for msg in st.session_state.chat_history])
+            total_text = total_conversation + "\n" + user_input
+            approx_token_count = len(total_text) // 4
+            tokens_left = MAX_TOKENS - approx_token_count - 50
+            color = "red" if tokens_left <= 0 else ("orange" if tokens_left < 100 else "green")
+            st.markdown(f"<span style='color:{color}; font-size: 0.9em;'>🧮 Tokens left (conversation): {tokens_left}</span>", unsafe_allow_html=True)
+
+        with col2:
+            clear_chat = st.button("🗑️ Clear Chat", key="clear_chat")
+            if clear_chat:
+                st.session_state.chat_history = []
+                st.session_state.awaiting_response = False
+                st.session_state.input_key += 1
+                st.rerun()
+
+        with col3:
+            send_button = st.button("Send 💬", key="send_message", type="primary")
+
+        # Check if we need to start streaming (phase 2)
+        if st.session_state.get("start_streaming", False):
+            st.session_state.start_streaming = False
+            st.session_state.awaiting_response = True
             st.rerun()
 
-        ab_enabled = feature_flags.get("ab_testing", False)
-
-        if st.button("Summarize 🌿"):
+        if send_button and not st.session_state.get("awaiting_response", False):
             if not user_input.strip():
-                st.warning("Please enter some text to summarize.")
+                st.warning("Please enter a message.")
             elif not BACKEND_ENDPOINT:
                 st.error("BACKEND_ENDPOINT not configured in environment variables.")
             elif tokens_left <= 0:
-                st.error("Your text is too long. Please shorten it to stay within the token limit.")
-            elif ab_enabled:
-                # A/B mode: show two columns with both prompts
-                with st.spinner("Running both prompts..."):
-                    try:
-                        payload = {"prompt": user_input}
-                        headers = {"Content-Type": "application/json"}
-
-                        with requests.post(
-                            urljoin(BACKEND_ENDPOINT, "/summarize/ab"),
-                            json=payload,
-                            headers=headers,
-                            stream=True,
-                            timeout=120
-                        ) as response:
-                            response.raise_for_status()
-
-                            col_a, col_b = st.columns(2)
-                            with col_a:
-                                st.markdown("**Response A**")
-                                box_a = st.empty()
-                            with col_b:
-                                st.markdown("**Response B**")
-                                box_b = st.empty()
-
-                            text_a = ""
-                            text_b = ""
-                            ab_mapping = {}
-
-                            for line in response.iter_lines():
-                                if line:
-                                    line = line.decode("utf-8")
-                                    if line.startswith("data: "):
-                                        data_str = line.removeprefix("data: ")
-                                        if data_str == "[DONE]":
-                                            break
-                                        data = json.loads(data_str)
-
-                                        if data.get("type") == "ab_config":
-                                            ab_mapping = data.get("mapping", {})
-                                            continue
-
-                                        variant = data.get("variant")
-                                        delta = data.get("delta", "")
-                                        if variant == "a" and delta:
-                                            text_a += delta
-                                            box_a.text_area("A", text_a, height=200, key=f"ab_a_{len(text_a)}")
-                                        elif variant == "b" and delta:
-                                            text_b += delta
-                                            box_b.text_area("B", text_b, height=200, key=f"ab_b_{len(text_b)}")
-
-                            # Save to session state
-                            if text_a and text_b:
-                                st.session_state["ab_response_a"] = text_a
-                                st.session_state["ab_response_b"] = text_b
-                                st.session_state["ab_mapping"] = ab_mapping
-                                st.session_state["ab_input"] = user_input
-                                st.session_state.pop("ab_feedback_sent", None)
-
-                    except Exception as e:
-                        st.error(f"Something went wrong: {e}")
+                st.error("Your message is too long. Please shorten it to stay within the token limit.")
             else:
-                # Standard single-prompt mode
-                with st.spinner("Talking to the forest spirits..."):
-                    try:
-                        payload = {
-                            "prompt": user_input
-                        }
-                        headers = {
-                            "Content-Type": "application/json",
-                        }
+                # Phase 1: Add message and clear input
+                st.session_state.chat_history.append({"role": "user", "content": user_input})
+                st.session_state.input_key += 1
+                st.session_state.start_streaming = True
+                # Rerun to show empty input
+                st.rerun()
 
-                        with requests.post(
-                            urljoin(BACKEND_ENDPOINT, "/summarize"),
-                            json=payload,
-                            headers=headers,
-                            stream=True,
-                            timeout=120
-                        ) as response:
-                            response.raise_for_status()
-                            summary = ""
-                            st.success("Here's your summary:")
-                            summary_box = st.empty()
-
-                            for line in response.iter_lines():
-                                if line:
-                                    line = line.decode("utf-8")
-                                    if line.startswith("data: "):
-                                        data_str = line.removeprefix("data: ")
-                                        if data_str == "[DONE]":
-                                            break
-                                        data = json.loads(data_str)
-                                        # Handle shield violation
-                                        if data.get("type") == "shield_violation":
-                                            summary_box.warning(f"🛡️ {data.get('message', 'Content blocked by safety shields')}")
-                                            break
-                                        # Handle error
-                                        if data.get("error"):
-                                            summary_box.error(f"Error: {data.get('error')}")
-                                            break
-                                        delta = data.get("delta")
-                                        if delta:
-                                            summary += delta
-                                            summary_box.text_area("Summary", summary, height=200)
-
-                            # Save to session state for feedback buttons (survive Streamlit reruns)
-                            if summary:
-                                st.session_state["last_summary"] = summary
-                                st.session_state["last_summary_input"] = user_input
-                                st.session_state.pop("summary_feedback_sent", None)
-
-                    except Exception as e:
-                        st.error(f"Something went wrong: {e}")
-
-        # A/B preference buttons
-        if ab_enabled and st.session_state.get("ab_response_a") and st.session_state.get("ab_response_b"):
-            if "ab_feedback_sent" not in st.session_state:
-                st.markdown("**Which response is better?**")
-                pref_col1, pref_col2 = st.columns(2)
-                with pref_col1:
-                    if st.button("A is better", key="ab_pref_a"):
-                        result = submit_ab_feedback(
-                            st.session_state["ab_input"],
-                            st.session_state["ab_response_a"],
-                            st.session_state["ab_response_b"],
-                            "a",
-                            st.session_state["ab_mapping"],
-                        )
-                        if "error" not in result:
-                            st.session_state["ab_feedback_sent"] = "a"
-                            st.rerun()
-                        else:
-                            st.error(f"Failed to send feedback: {result['error']}")
-                with pref_col2:
-                    if st.button("B is better", key="ab_pref_b"):
-                        result = submit_ab_feedback(
-                            st.session_state["ab_input"],
-                            st.session_state["ab_response_a"],
-                            st.session_state["ab_response_b"],
-                            "b",
-                            st.session_state["ab_mapping"],
-                        )
-                        if "error" not in result:
-                            st.session_state["ab_feedback_sent"] = "b"
-                            st.rerun()
-                        else:
-                            st.error(f"Failed to send feedback: {result['error']}")
-            else:
-                pref = st.session_state["ab_feedback_sent"]
-                st.success(f"Thanks! You preferred Response {pref.upper()}.")
-
-        # Show feedback buttons if a summary exists and feedback feature is enabled (standard mode only)
-        if not ab_enabled and st.session_state.get("last_summary") and feature_flags.get("feedback", False):
-            st.markdown("---")
-            st.markdown("**Was this summary helpful?**")
-
-            if "summary_feedback_sent" not in st.session_state:
-                col1, col2, col3 = st.columns([1, 1, 6])
-                with col1:
-                    if st.button("👍", key="thumbs_up_sum"):
-                        result = submit_feedback(
-                            st.session_state["last_summary_input"],
-                            st.session_state["last_summary"],
-                            "thumbs_up",
-                        )
-                        if "error" not in result:
-                            st.session_state["summary_feedback_sent"] = "thumbs_up"
-                            st.rerun()
-                        else:
-                            st.error(f"Failed to send feedback: {result['error']}")
-                with col2:
-                    if st.button("👎", key="thumbs_down_sum"):
-                        result = submit_feedback(
-                            st.session_state["last_summary_input"],
-                            st.session_state["last_summary"],
-                            "thumbs_down",
-                        )
-                        if "error" not in result:
-                            st.session_state["summary_feedback_sent"] = "thumbs_down"
-                            st.rerun()
-                        else:
-                            st.error(f"Failed to send feedback: {result['error']}")
-            else:
-                rating = st.session_state["summary_feedback_sent"]
-                if rating == "thumbs_up":
-                    st.success("Thanks for the positive feedback!")
-                else:
-                    st.info("Thanks for the feedback! We'll use it to improve.")
 
 elif feature == "Information Search":
     if not feature_flags.get("information-search", False):

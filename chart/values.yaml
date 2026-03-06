@@ -4,4 +4,4 @@ LLM_ENDPOINT: "http://localhost:8000"
 BACKEND_ENDPOINT: ""
 image:
   name: "canopy-ui"
-  tag: "simple-0.2"
+  tag: "simple-0.3"

@@ -140,6 +140,10 @@ if feature == "Summarization":
         if "awaiting_response" not in st.session_state:
             st.session_state.awaiting_response = False
 
+        # Initialize feedback state
+        if "chat_feedback" not in st.session_state:
+            st.session_state.chat_feedback = {}
+
         # Display chat history
         chat_container = st.container()
         with chat_container:
@@ -147,7 +151,6 @@ if feature == "Summarization":
                 if msg["role"] == "user":
                     # Escape HTML and ensure black text
                     safe_content = msg["content"].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;")
-                    # Use <br> for line breaks
                     safe_content = safe_content.replace("\n", "<br>")
                     st.markdown(f"""
                     <div style='background-color: #e3f2fd; padding: 12px 15px; border-radius: 15px; margin: 8px 0; max-width: 80%; margin-left: auto;'>
@@ -165,6 +168,29 @@ if feature == "Summarization":
                         <span style='color: #000000;'>{safe_content}</span>
                     </div>
                     """, unsafe_allow_html=True)
+
+                    # Show feedback buttons under each assistant message if feedback is enabled
+                    if feature_flags.get("feedback", False):
+                        feedback_key = f"feedback_{i}"
+                        if feedback_key in st.session_state.chat_feedback:
+                            rating = st.session_state.chat_feedback[feedback_key]
+                            st.markdown(f"<span style='font-size: 0.8em; color: #888;'>{'👍 Thanks for the feedback!' if rating == 'thumbs_up' else '👎 Thanks for the feedback!'}</span>", unsafe_allow_html=True)
+                        else:
+                            # Find the corresponding user message (previous message)
+                            user_msg = st.session_state.chat_history[i - 1]["content"] if i > 0 else ""
+                            col_up, col_down, _ = st.columns([1, 1, 10])
+                            with col_up:
+                                if st.button("👍", key=f"up_{i}"):
+                                    result = submit_feedback(user_msg, msg["content"], "thumbs_up")
+                                    if "error" not in result:
+                                        st.session_state.chat_feedback[feedback_key] = "thumbs_up"
+                                        st.rerun()
+                            with col_down:
+                                if st.button("👎", key=f"down_{i}"):
+                                    result = submit_feedback(user_msg, msg["content"], "thumbs_down")
+                                    if "error" not in result:
+                                        st.session_state.chat_feedback[feedback_key] = "thumbs_down"
+                                        st.rerun()
 
             # Handle streaming response if awaiting
             if st.session_state.awaiting_response:

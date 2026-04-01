@@ -4,11 +4,44 @@ import streamlit as st
 from PIL import Image
 import json
 from urllib.parse import urljoin
+import mlflow
 
 # Load environment variables
 LLM_ENDPOINT = os.getenv("LLM_ENDPOINT")
-SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT", "Summarize this text for me.")
 MODEL_NAME = os.getenv("MODEL_NAME", "tinyllama")
+
+# MLflow prompt registry configuration
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI")
+MLFLOW_PROMPT_NAME = os.getenv("MLFLOW_PROMPT_NAME")
+MLFLOW_PROMPT_VERSION = os.getenv("MLFLOW_PROMPT_VERSION")
+MLFLOW_TRACKING_TOKEN = os.getenv("MLFLOW_TRACKING_TOKEN")
+os.environ["MLFLOW_TRACKING_AUTH"] = "kubernetes"
+os.environ["MLFLOW_TRACKING_INSECURE_TLS"] = "true"
+
+if not os.getenv("MLFLOW_WORKSPACE"):
+    NAMESPACE_PATH = "/run/secrets/kubernetes.io/serviceaccount/namespace"
+    if os.path.exists(NAMESPACE_PATH):
+        with open(NAMESPACE_PATH) as f:
+            os.environ["MLFLOW_WORKSPACE"] = f.read().strip()
+
+mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+
+SA_TOKEN_PATH = "/run/secrets/kubernetes.io/serviceaccount/token"
+if os.path.exists(SA_TOKEN_PATH):
+    with open(SA_TOKEN_PATH) as f:
+        os.environ["MLFLOW_TRACKING_TOKEN"] = f.read().strip()
+
+@st.cache_data(ttl=60)
+def get_system_prompt():
+    """Fetch system prompt from MLflow prompt registry."""
+    version = MLFLOW_PROMPT_VERSION or "latest"
+    if version == "latest":
+        prompt = mlflow.genai.load_prompt(f"prompts:/{MLFLOW_PROMPT_NAME}@{version}")
+    else:
+        prompt = mlflow.genai.load_prompt(f"prompts:/{MLFLOW_PROMPT_NAME}/{version}")
+    return prompt.template
+
+SYSTEM_PROMPT = get_system_prompt()
 
 
 

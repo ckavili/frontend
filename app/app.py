@@ -140,6 +140,16 @@ if feature == "Summarization":
         if "awaiting_response" not in st.session_state:
             st.session_state.awaiting_response = False
 
+        # Initialize A/B testing state
+        if "ab_response_a" not in st.session_state:
+            st.session_state.ab_response_a = None
+        if "ab_response_b" not in st.session_state:
+            st.session_state.ab_response_b = None
+        if "ab_mapping" not in st.session_state:
+            st.session_state.ab_mapping = None
+        if "ab_input" not in st.session_state:
+            st.session_state.ab_input = None
+
         # Initialize feedback state
         if "chat_feedback" not in st.session_state:
             st.session_state.chat_feedback = {}
@@ -192,72 +202,220 @@ if feature == "Summarization":
                                         st.session_state.chat_feedback[feedback_key] = "thumbs_down"
                                         st.rerun()
 
+            # Show completed A/B responses and preference buttons (before streaming starts)
+            if (feature_flags.get("ab_testing", False)
+                    and st.session_state.get("ab_response_a")
+                    and st.session_state.get("ab_response_b")):
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    safe_a = st.session_state.ab_response_a.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;").replace("\n", "<br>")
+                    st.markdown(f"""
+                    <div style='background-color: #f1f8e9; padding: 12px 15px; border-radius: 15px; margin: 8px 0;'>
+                        <strong style='color: #558b2f;'>Response A</strong><br>
+                        <span style='color: #000000;'>{safe_a}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    if st.button("A is better", key="ab_pref_a"):
+                        result = submit_ab_feedback(
+                            st.session_state["ab_input"],
+                            st.session_state["ab_response_a"],
+                            st.session_state["ab_response_b"],
+                            "a",
+                            st.session_state["ab_mapping"],
+                        )
+                        if "error" not in result:
+                            st.session_state.chat_history.append({"role": "assistant", "content": st.session_state["ab_response_a"]})
+                            st.session_state.ab_response_a = None
+                            st.session_state.ab_response_b = None
+                            st.session_state.ab_mapping = None
+                            st.session_state.ab_input = None
+                            st.toast("Thanks! Response A added to the conversation.")
+                            st.rerun()
+                        else:
+                            st.error(f"Failed to send feedback: {result['error']}")
+                with col_b:
+                    safe_b = st.session_state.ab_response_b.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;").replace("\n", "<br>")
+                    st.markdown(f"""
+                    <div style='background-color: #e8f4f8; padding: 12px 15px; border-radius: 15px; margin: 8px 0;'>
+                        <strong style='color: #1e88e5;'>Response B</strong><br>
+                        <span style='color: #000000;'>{safe_b}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    if st.button("B is better", key="ab_pref_b"):
+                        result = submit_ab_feedback(
+                            st.session_state["ab_input"],
+                            st.session_state["ab_response_a"],
+                            st.session_state["ab_response_b"],
+                            "b",
+                            st.session_state["ab_mapping"],
+                        )
+                        if "error" not in result:
+                            st.session_state.chat_history.append({"role": "assistant", "content": st.session_state["ab_response_b"]})
+                            st.session_state.ab_response_a = None
+                            st.session_state.ab_response_b = None
+                            st.session_state.ab_mapping = None
+                            st.session_state.ab_input = None
+                            st.toast("Thanks! Response B added to the conversation.")
+                            st.rerun()
+                        else:
+                            st.error(f"Failed to send feedback: {result['error']}")
+
             # Handle streaming response if awaiting
             if st.session_state.awaiting_response:
-                streaming_placeholder = st.empty()
+                if feature_flags.get("ab_testing", False):
+                    # A/B mode: stream two responses side by side from /summarize/ab
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        st.markdown("**Response A**")
+                        placeholder_a = st.empty()
+                    with col_b:
+                        st.markdown("**Response B**")
+                        placeholder_b = st.empty()
 
-                # Fetch the response
-                try:
-                    messages = [{"role": msg["role"], "content": msg["content"]} for msg in st.session_state.chat_history]
-                    payload = {"messages": messages}
-                    headers = {"Content-Type": "application/json"}
+                    try:
+                        last_user_msg = next(
+                            (msg["content"] for msg in reversed(st.session_state.chat_history) if msg["role"] == "user"),
+                            ""
+                        )
+                        payload = {"prompt": last_user_msg}
+                        headers = {"Content-Type": "application/json"}
 
-                    with requests.post(
-                        urljoin(BACKEND_ENDPOINT, "/summarize/chat"),
-                        json=payload,
-                        headers=headers,
-                        stream=True,
-                        timeout=120
-                    ) as response:
-                        response.raise_for_status()
-                        assistant_response = ""
+                        response_a = ""
+                        response_b = ""
+                        ab_mapping = {}
 
-                        for line in response.iter_lines():
-                            if line:
-                                line = line.decode("utf-8")
-                                if line.startswith("data: "):
-                                    data_str = line.removeprefix("data: ")
-                                    if data_str == "[DONE]":
-                                        break
+                        with requests.post(
+                            urljoin(BACKEND_ENDPOINT, "/summarize/ab"),
+                            json=payload,
+                            headers=headers,
+                            stream=True,
+                            timeout=120
+                        ) as response:
+                            response.raise_for_status()
 
-                                    try:
-                                        data = json.loads(data_str)
-                                    except json.JSONDecodeError:
-                                        continue
+                            for line in response.iter_lines():
+                                if line:
+                                    line = line.decode("utf-8")
+                                    if line.startswith("data: "):
+                                        data_str = line.removeprefix("data: ")
+                                        if data_str == "[DONE]":
+                                            break
 
-                                    if data.get("type") == "shield_violation":
-                                        assistant_response = f"🛡️ {data.get('message', 'Content blocked by safety shields')}"
-                                        break
+                                        try:
+                                            data = json.loads(data_str)
+                                        except json.JSONDecodeError:
+                                            continue
 
-                                    if data.get("error"):
-                                        assistant_response = f"Error: {data.get('error')}"
-                                        break
+                                        if data.get("type") == "ab_config":
+                                            ab_mapping = data.get("mapping", {})
+                                            continue
 
-                                    delta = data.get("delta")
-                                    if delta:
-                                        assistant_response += delta
-                                        # Escape HTML and show in green bubble
-                                        safe_content = assistant_response.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;").replace("\n", "<br>")
-                                        streaming_placeholder.markdown(f"""
-                                        <div style='background-color: #f1f8e9; padding: 12px 15px; border-radius: 15px; margin: 8px 0; max-width: 80%; min-height: 50px;'>
-                                            <strong style='color: #558b2f;'>Assistant</strong><br>
-                                            <span style='color: #000000;'>{safe_content}</span>
-                                        </div>
-                                        """, unsafe_allow_html=True)
+                                        if data.get("error"):
+                                            st.error(f"Error in response {data.get('variant', '').upper()}: {data.get('error')}")
+                                            continue
 
-                        # Save complete response
-                        if assistant_response:
-                            st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
+                                        variant = data.get("variant")
+                                        delta = data.get("delta")
+
+                                        if variant == "a" and delta:
+                                            response_a += delta
+                                            safe_a = response_a.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;").replace("\n", "<br>")
+                                            placeholder_a.markdown(f"""
+                                            <div style='background-color: #f1f8e9; padding: 12px 15px; border-radius: 15px; margin: 8px 0; min-height: 50px;'>
+                                                <strong style='color: #558b2f;'>Response A</strong><br>
+                                                <span style='color: #000000;'>{safe_a}</span>
+                                            </div>
+                                            """, unsafe_allow_html=True)
+                                        elif variant == "b" and delta:
+                                            response_b += delta
+                                            safe_b = response_b.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;").replace("\n", "<br>")
+                                            placeholder_b.markdown(f"""
+                                            <div style='background-color: #e8f4f8; padding: 12px 15px; border-radius: 15px; margin: 8px 0; min-height: 50px;'>
+                                                <strong style='color: #1e88e5;'>Response B</strong><br>
+                                                <span style='color: #000000;'>{safe_b}</span>
+                                            </div>
+                                            """, unsafe_allow_html=True)
+
+                        if response_a or response_b:
+                            st.session_state.ab_response_a = response_a
+                            st.session_state.ab_response_b = response_b
+                            st.session_state.ab_mapping = ab_mapping
+                            st.session_state.ab_input = last_user_msg
                         st.session_state.awaiting_response = False
                         st.rerun()
 
-                except Exception as e:
-                    st.error(f"Something went wrong: {e}")
-                    st.session_state.awaiting_response = False
-                    # Remove the user message if there was an error
-                    if st.session_state.chat_history and st.session_state.chat_history[-1]["role"] == "user":
-                        st.session_state.chat_history.pop()
-                    st.rerun()
+                    except Exception as e:
+                        st.error(f"Something went wrong: {e}")
+                        st.session_state.awaiting_response = False
+                        if st.session_state.chat_history and st.session_state.chat_history[-1]["role"] == "user":
+                            st.session_state.chat_history.pop()
+                        st.rerun()
+
+                else:
+                    streaming_placeholder = st.empty()
+
+                    # Fetch the response
+                    try:
+                        messages = [{"role": msg["role"], "content": msg["content"]} for msg in st.session_state.chat_history]
+                        payload = {"messages": messages}
+                        headers = {"Content-Type": "application/json"}
+
+                        with requests.post(
+                            urljoin(BACKEND_ENDPOINT, "/summarize/chat"),
+                            json=payload,
+                            headers=headers,
+                            stream=True,
+                            timeout=120
+                        ) as response:
+                            response.raise_for_status()
+                            assistant_response = ""
+
+                            for line in response.iter_lines():
+                                if line:
+                                    line = line.decode("utf-8")
+                                    if line.startswith("data: "):
+                                        data_str = line.removeprefix("data: ")
+                                        if data_str == "[DONE]":
+                                            break
+
+                                        try:
+                                            data = json.loads(data_str)
+                                        except json.JSONDecodeError:
+                                            continue
+
+                                        if data.get("type") == "shield_violation":
+                                            assistant_response = f"🛡️ {data.get('message', 'Content blocked by safety shields')}"
+                                            break
+
+                                        if data.get("error"):
+                                            assistant_response = f"Error: {data.get('error')}"
+                                            break
+
+                                        delta = data.get("delta")
+                                        if delta:
+                                            assistant_response += delta
+                                            # Escape HTML and show in green bubble
+                                            safe_content = assistant_response.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;").replace("\n", "<br>")
+                                            streaming_placeholder.markdown(f"""
+                                            <div style='background-color: #f1f8e9; padding: 12px 15px; border-radius: 15px; margin: 8px 0; max-width: 80%; min-height: 50px;'>
+                                                <strong style='color: #558b2f;'>Assistant</strong><br>
+                                                <span style='color: #000000;'>{safe_content}</span>
+                                            </div>
+                                            """, unsafe_allow_html=True)
+
+                            # Save complete response
+                            if assistant_response:
+                                st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
+                            st.session_state.awaiting_response = False
+                            st.rerun()
+
+                    except Exception as e:
+                        st.error(f"Something went wrong: {e}")
+                        st.session_state.awaiting_response = False
+                        # Remove the user message if there was an error
+                        if st.session_state.chat_history and st.session_state.chat_history[-1]["role"] == "user":
+                            st.session_state.chat_history.pop()
+                        st.rerun()
 
         # Add some spacing
         st.markdown("---")
@@ -286,6 +444,10 @@ if feature == "Summarization":
             if clear_chat:
                 st.session_state.chat_history = []
                 st.session_state.awaiting_response = False
+                st.session_state.ab_response_a = None
+                st.session_state.ab_response_b = None
+                st.session_state.ab_mapping = None
+                st.session_state.ab_input = None
                 st.session_state.input_key += 1
                 st.rerun()
 
@@ -306,6 +468,13 @@ if feature == "Summarization":
             elif tokens_left <= 0:
                 st.error("Your message is too long. Please shorten it to stay within the token limit.")
             else:
+                # If an A/B response is pending and user didn't choose, default to A silently
+                if feature_flags.get("ab_testing", False) and st.session_state.get("ab_response_a"):
+                    st.session_state.chat_history.append({"role": "assistant", "content": st.session_state["ab_response_a"]})
+                    st.session_state.ab_response_a = None
+                    st.session_state.ab_response_b = None
+                    st.session_state.ab_mapping = None
+                    st.session_state.ab_input = None
                 # Phase 1: Add message and clear input
                 st.session_state.chat_history.append({"role": "user", "content": user_input})
                 st.session_state.input_key += 1

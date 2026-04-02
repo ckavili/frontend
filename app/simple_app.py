@@ -11,7 +11,7 @@ LLM_ENDPOINT = os.getenv("LLM_ENDPOINT")
 MODEL_NAME = os.getenv("MODEL_NAME", "tinyllama")
 
 # MLflow prompt registry configuration
-MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI")
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "https://mlflow.redhat-ods-applications.svc.cluster.local:8443")
 MLFLOW_PROMPT_NAME = os.getenv("MLFLOW_PROMPT_NAME")
 MLFLOW_PROMPT_VERSION = os.getenv("MLFLOW_PROMPT_VERSION")
 MLFLOW_TRACKING_TOKEN = os.getenv("MLFLOW_TRACKING_TOKEN")

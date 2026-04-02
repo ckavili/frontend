@@ -32,14 +32,20 @@ spec:
            {{- if not .Values.BACKEND_ENDPOINT}}
             - name: LLM_ENDPOINT
               value: "{{ .Values.LLM_ENDPOINT }}"
-            - name: SYSTEM_PROMPT
-              value: "{{ .Values.SYSTEM_PROMPT}}"
             - name: MODEL_NAME
               value: "{{ .Values.MODEL_NAME }}"
           {{- else }}
             - name: BACKEND_ENDPOINT
               value: "{{ .Values.BACKEND_ENDPOINT }}"
           {{- end }}
+            - name: MLFLOW_TRACKING_URI
+              value: "{{ .Values.MLFLOW_TRACKING_URI }}"
+            - name: MLFLOW_PROMPT_NAME
+              value: "{{ .Values.MLFLOW_PROMPT_NAME | default "summarization" }}"
+            - name: MLFLOW_PROMPT_VERSION
+              value: "{{ .Values.MLFLOW_PROMPT_VERSION | default "latest" }}"
+            - name: MLFLOW_TRACKING_INSECURE_TLS
+              value: "true"
             - name: OTEL_TRACES_SAMPLER_ARG
               value: "1.0"
             - name: OTEL_LOGS_EXPORTER

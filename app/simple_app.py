@@ -15,8 +15,10 @@ MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI")
 MLFLOW_PROMPT_NAME = os.getenv("MLFLOW_PROMPT_NAME")
 MLFLOW_PROMPT_VERSION = os.getenv("MLFLOW_PROMPT_VERSION")
 MLFLOW_TRACKING_TOKEN = os.getenv("MLFLOW_TRACKING_TOKEN")
-os.environ["MLFLOW_TRACKING_AUTH"] = "kubernetes"
-os.environ["MLFLOW_TRACKING_INSECURE_TLS"] = "true"
+if not os.getenv("MLFLOW_TRACKING_AUTH"):
+    os.environ["MLFLOW_TRACKING_AUTH"] = "kubernetes"
+if not os.getenv("MLFLOW_TRACKING_INSECURE_TLS"):
+    os.environ["MLFLOW_TRACKING_INSECURE_TLS"] = "true"
 
 if not os.getenv("MLFLOW_WORKSPACE"):
     NAMESPACE_PATH = "/run/secrets/kubernetes.io/serviceaccount/namespace"
@@ -55,7 +57,7 @@ st.set_page_config(
 # Sidebar navigation
 logo_path = "logo.png"
 logo = Image.open(logo_path)
-st.sidebar.image(logo, use_container_width=True)
+st.sidebar.image(logo, width="stretch")
 st.sidebar.title("Canopy 🌿")
 feature = st.sidebar.radio(
     "What do you want to do:",
@@ -200,26 +202,25 @@ if feature == "Summarization":
 
     user_input = st.text_area("Your message:", height=100, key=f"chat_input_{st.session_state.input_key}", placeholder="Type your message here...")
 
-    col1, col2, col3 = st.columns([2, 1, 1])
-    with col1:
-        # Calculate tokens based on entire conversation + current message
-        total_conversation = "\n".join([msg["content"] for msg in st.session_state.chat_history])
-        total_text = total_conversation + "\n" + user_input
-        approx_token_count = len(total_text) // 4
-        tokens_left = MAX_TOKENS - approx_token_count - 50
-        color = "red" if tokens_left <= 0 else ("orange" if tokens_left < 100 else "green")
-        st.markdown(f"<span style='color:{color}; font-size: 0.9em;'>🧮 Tokens left (conversation): {tokens_left}</span>", unsafe_allow_html=True)
+    # Calculate tokens based on entire conversation + current message
+    total_conversation = "\n".join([msg["content"] for msg in st.session_state.chat_history])
+    total_text = total_conversation + "\n" + user_input
+    approx_token_count = len(total_text) // 4
+    tokens_left = MAX_TOKENS - approx_token_count - 50
+    color = "red" if tokens_left <= 0 else ("orange" if tokens_left < 100 else "green")
+    st.markdown(f"<span style='color:{color}; font-size: 0.9em;'>Tokens left (conversation): {tokens_left}</span>", unsafe_allow_html=True)
 
-    with col2:
-        clear_chat = st.button("🗑️ Clear Chat", key="clear_chat")
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        clear_chat = st.button("🗑️ Clear Chat", key="clear_chat", use_container_width=True)
         if clear_chat:
             st.session_state.chat_history = []
             st.session_state.awaiting_response = False
             st.session_state.input_key += 1
             st.rerun()
 
-    with col3:
-        send_button = st.button("Send 💬", key="send_message", type="primary")
+    with col2:
+        send_button = st.button("Send 💬", key="send_message", type="primary", use_container_width=True)
 
     # Check if we need to start streaming (phase 2)
     if st.session_state.get("start_streaming", False):

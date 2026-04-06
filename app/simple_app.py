@@ -1,9 +1,8 @@
 import os
-import requests
+import uuid
 import streamlit as st
 from PIL import Image
-import json
-from urllib.parse import urljoin
+from openai import OpenAI
 import mlflow
 
 # Load environment variables
@@ -26,16 +25,22 @@ if not os.getenv("MLFLOW_WORKSPACE"):
         with open(NAMESPACE_PATH) as f:
             os.environ["MLFLOW_WORKSPACE"] = f.read().strip()
 
-mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-
 SA_TOKEN_PATH = "/run/secrets/kubernetes.io/serviceaccount/token"
 if os.path.exists(SA_TOKEN_PATH):
     with open(SA_TOKEN_PATH) as f:
         os.environ["MLFLOW_TRACKING_TOKEN"] = f.read().strip()
 
+mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+mlflow.set_experiment("canopy-experiment")
+mlflow.openai.autolog()
+
+client = OpenAI(
+    base_url=LLM_ENDPOINT + "/v1",
+    api_key="no-key-required",
+)
+
 @st.cache_data(ttl=60)
 def get_system_prompt():
-    """Fetch system prompt from MLflow prompt registry."""
     version = MLFLOW_PROMPT_VERSION or "latest"
     if version == "latest":
         prompt = mlflow.genai.load_prompt(f"prompts:/{MLFLOW_PROMPT_NAME}@{version}")
@@ -44,6 +49,25 @@ def get_system_prompt():
     return prompt.template
 
 SYSTEM_PROMPT = get_system_prompt()
+
+
+@mlflow.trace
+def chat_completion(messages: list[dict], session_id: str) -> str:
+    mlflow.update_current_trace(
+        metadata={
+            "mlflow.trace.session": session_id,
+        },
+        tags={
+            "mlflow.trace.session": session_id,
+        },
+    )
+    response = client.chat.completions.create(
+        model=MODEL_NAME,
+        messages=messages,
+        max_tokens=2048,
+        temperature=0.9,
+    )
+    return response.choices[0].message.content
 
 
 
@@ -95,6 +119,8 @@ if feature == "Summarization":
         st.session_state.chat_history = []
     if "awaiting_response" not in st.session_state:
         st.session_state.awaiting_response = False
+    if "session_id" not in st.session_state:
+        st.session_state.session_id = str(uuid.uuid4())
 
     # Display chat history
     chat_container = st.container()
@@ -121,10 +147,8 @@ if feature == "Summarization":
                 </div>
                 """, unsafe_allow_html=True)
 
-        # Handle streaming response if awaiting
+        # Handle response if awaiting
         if st.session_state.awaiting_response:
-            streaming_placeholder = st.empty()
-
             # Fetch the response
             try:
                 # Build messages with conversation history
@@ -132,62 +156,20 @@ if feature == "Summarization":
                 for msg in st.session_state.chat_history:
                     messages.append({"role": msg["role"], "content": msg["content"]})
 
-                payload = {
-                    "model": MODEL_NAME,
-                    "messages": messages,
-                    "max_tokens": 2048,
-                    "temperature": 0.9,
-                    "stream": True
-                }
-                headers = {"Content-Type": "application/json"}
+                assistant_response = chat_completion(messages, st.session_state.session_id) or ""
 
-                with requests.post(
-                    urljoin(LLM_ENDPOINT, "/v1/chat/completions"),
-                    json=payload,
-                    headers=headers,
-                    stream=True,
-                    timeout=120
-                ) as response:
-                    response.raise_for_status()
-                    assistant_response = ""
-
-                    for line in response.iter_lines():
-                        if line:
-                            line = line.decode("utf-8")
-                            if line.startswith("data: "):
-                                data_str = line.removeprefix("data: ")
-                                if data_str == "[DONE]":
-                                    break
-
-                                try:
-                                    data = json.loads(data_str)
-                                except json.JSONDecodeError:
-                                    continue
-
-                                delta = data.get("choices", [{}])[0].get("delta", {}).get("content")
-                                if delta:
-                                    assistant_response += delta
-                                    # Escape HTML and show in green bubble
-                                    safe_content = assistant_response.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;").replace("\n", "<br>")
-                                    streaming_placeholder.markdown(f"""
-                                    <div style='background-color: #f1f8e9; padding: 12px 15px; border-radius: 15px; margin: 8px 0; max-width: 80%; min-height: 50px;'>
-                                        <strong style='color: #558b2f;'>Assistant</strong><br>
-                                        <span style='color: #000000;'>{safe_content}</span>
-                                    </div>
-                                    """, unsafe_allow_html=True)
-
-                    # Save complete response
-                    if assistant_response:
-                        st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
-                    st.session_state.awaiting_response = False
-                    st.rerun()
+                if assistant_response:
+                    st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
+                st.session_state.awaiting_response = False
+                st.rerun()
 
             except Exception as e:
+                import sys
+                print(f"[ERROR] {e}", file=sys.stderr)
+                import traceback
+                traceback.print_exc(file=sys.stderr)
                 st.error(f"Something went wrong: {e}")
                 st.session_state.awaiting_response = False
-                # Remove the user message if there was an error
-                if st.session_state.chat_history and st.session_state.chat_history[-1]["role"] == "user":
-                    st.session_state.chat_history.pop()
                 st.rerun()
 
     # Add some spacing
@@ -216,6 +198,7 @@ if feature == "Summarization":
         if clear_chat:
             st.session_state.chat_history = []
             st.session_state.awaiting_response = False
+            st.session_state.session_id = str(uuid.uuid4())
             st.session_state.input_key += 1
             st.rerun()
 

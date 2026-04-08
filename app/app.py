@@ -2,35 +2,12 @@ import os
 import uuid
 import requests
 import json
-from contextlib import contextmanager
 import streamlit as st
 from PIL import Image
 from urllib.parse import urljoin
-import mlflow
 
 # Load environment variables
 BACKEND_ENDPOINT = os.getenv("BACKEND_ENDPOINT", "http://localhost:8000")
-
-# MLflow tracing configuration
-MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "https://mlflow.redhat-ods-applications.svc.cluster.local:8443")
-if not os.getenv("MLFLOW_TRACKING_AUTH"):
-    os.environ["MLFLOW_TRACKING_AUTH"] = "kubernetes"
-if not os.getenv("MLFLOW_TRACKING_INSECURE_TLS"):
-    os.environ["MLFLOW_TRACKING_INSECURE_TLS"] = "true"
-
-if not os.getenv("MLFLOW_WORKSPACE"):
-    NAMESPACE_PATH = "/run/secrets/kubernetes.io/serviceaccount/namespace"
-    if os.path.exists(NAMESPACE_PATH):
-        with open(NAMESPACE_PATH) as f:
-            os.environ["MLFLOW_WORKSPACE"] = f.read().strip()
-
-SA_TOKEN_PATH = "/run/secrets/kubernetes.io/serviceaccount/token"
-if os.path.exists(SA_TOKEN_PATH):
-    with open(SA_TOKEN_PATH) as f:
-        os.environ["MLFLOW_TRACKING_TOKEN"] = f.read().strip()
-
-mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-mlflow.set_experiment("canopy-backend")
 
 def submit_feedback(input_text, response_text, rating, feature="summarize"):
     """Submit feedback to the backend."""
@@ -72,30 +49,16 @@ def submit_ab_feedback(input_text, response_a, response_b, preference, prompt_ma
     except Exception as e:
         return {"error": str(e)}
 
-@contextmanager
-def traced_backend_call(endpoint, payload, session_id, stream=True, timeout=120):
-    """Make a traced HTTP call to the backend. Yields (response, span) so the caller can set_outputs after streaming."""
-    with mlflow.start_span(name="backend_call") as span:
-        # Extract user message from payload (prompt or last message content)
-        user_input = payload.get("prompt") or ""
-        if not user_input and "messages" in payload:
-            user_msgs = [m for m in payload["messages"] if m.get("role") == "user"]
-            if user_msgs:
-                user_input = user_msgs[-1].get("content", "")
-        span.set_inputs(user_input)
-        mlflow.update_current_trace(
-            metadata={"mlflow.trace.session": session_id},
-            tags={"mlflow.trace.session": session_id},
-        )
-        headers = {"Content-Type": "application/json", "X-Session-Id": session_id}
-        response = requests.post(
-            urljoin(BACKEND_ENDPOINT, endpoint),
-            json=payload,
-            headers=headers,
-            stream=stream,
-            timeout=timeout,
-        )
-        yield response, span
+def backend_call(endpoint, payload, session_id, stream=True, timeout=120):
+    """Make an HTTP call to the backend."""
+    headers = {"Content-Type": "application/json", "X-Session-Id": session_id}
+    return requests.post(
+        urljoin(BACKEND_ENDPOINT, endpoint),
+        json=payload,
+        headers=headers,
+        stream=stream,
+        timeout=timeout,
+    )
 
 
 # Cache feature flags to avoid repeated requests
@@ -337,7 +300,7 @@ if feature == "Summarization":
                         response_b = ""
                         ab_mapping = {}
 
-                        with traced_backend_call("/summarize/ab", payload, st.session_state.session_id) as (response, span):
+                        with backend_call("/summarize/ab", payload, st.session_state.session_id) as response:
                             response.raise_for_status()
 
                             for line in response.iter_lines():
@@ -384,7 +347,6 @@ if feature == "Summarization":
                                             """, unsafe_allow_html=True)
 
                         if response_a or response_b:
-                            span.set_outputs({"response_a": response_a, "response_b": response_b})
                             st.session_state.ab_response_a = response_a
                             st.session_state.ab_response_b = response_b
                             st.session_state.ab_mapping = ab_mapping
@@ -407,7 +369,7 @@ if feature == "Summarization":
                         messages = [{"role": msg["role"], "content": msg["content"]} for msg in st.session_state.chat_history]
                         payload = {"messages": messages, "session_id": st.session_state.session_id}
 
-                        with traced_backend_call("/summarize/chat", payload, st.session_state.session_id) as (response, span):
+                        with backend_call("/summarize/chat", payload, st.session_state.session_id) as response:
                             response.raise_for_status()
                             assistant_response = ""
 
@@ -446,7 +408,6 @@ if feature == "Summarization":
 
                             # Save complete response
                             if assistant_response:
-                                span.set_outputs(assistant_response)
                                 st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
                             st.session_state.awaiting_response = False
                             st.rerun()
@@ -557,7 +518,7 @@ elif feature == "Information Search":
                             "prompt": user_input
                         }
 
-                        with traced_backend_call("/information-search", payload, st.session_state.session_id) as (response, span):
+                        with backend_call("/information-search", payload, st.session_state.session_id) as response:
                             response.raise_for_status()
                             answer = ""
                             st.success("Here's your Information Search answer:")
@@ -575,9 +536,6 @@ elif feature == "Information Search":
                                         if delta:
                                             answer += delta
                                             answer_box.text_area("Information Search Answer", answer, height=200)
-                            if answer:
-                                span.set_outputs(answer)
-
                     except Exception as e:
                         st.error(f"Something went wrong: {e}")
 
@@ -610,7 +568,7 @@ elif feature == "Student Assistant":
                     try:
                         payload = {"prompt": user_input}
 
-                        with traced_backend_call("/student-assistant", payload, st.session_state.session_id) as (response, span):
+                        with backend_call("/student-assistant", payload, st.session_state.session_id) as response:
                             response.raise_for_status()
 
                             # Create containers for different sections
@@ -668,8 +626,6 @@ elif feature == "Student Assistant":
                                                 estimated_lines = max(line_count, len(answer) // 80)  # Assume ~80 chars per line
                                                 dynamic_height = min(max(estimated_lines * 25, 150), 600)  # Between 150 and 600px
                                                 answer_box.markdown(f"**Response:**\n\n{answer}")
-                            if answer:
-                                span.set_outputs(answer)
 
                     except Exception as e:
                         st.error(f"Something went wrong: {e}")
@@ -708,7 +664,7 @@ elif feature == "Socratic Tutor":
                             "prompt": user_input
                         }
 
-                        with traced_backend_call("/socratic-tutor", payload, st.session_state.session_id) as (response, span):
+                        with backend_call("/socratic-tutor", payload, st.session_state.session_id) as response:
                             response.raise_for_status()
                             tutor_response = ""
                             st.success("Here's what your tutor has to say:")
@@ -730,8 +686,6 @@ elif feature == "Socratic Tutor":
                                         if delta:
                                             tutor_response += delta
                                             response_box.text_area("Tutor Response", tutor_response, height=200)
-                            if tutor_response:
-                                span.set_outputs(tutor_response)
 
                     except Exception as e:
                         st.error(f"Something went wrong: {e}")

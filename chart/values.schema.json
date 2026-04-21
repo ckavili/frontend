@@ -4,6 +4,22 @@
   "title": "Canopy UI Helm Chart Values Schema",
   "description": "Schema for validating values.yaml configuration for the Canopy UI Helm chart",
   "properties": {
+    "MODEL_NAME": {
+      "type": "string",
+      "description": "Name of the model to be used",
+      "default": "llama32",
+      "minLength": 1
+    },
+    "LLM_ENDPOINT": {
+      "type": "string",
+      "description": "Endpoint URL for the LLM service",
+      "default": ""
+    },
+    "BACKEND_ENDPOINT": {
+      "type": "string",
+      "description": "Endpoint URL for the backend service",
+      "default": ""
+    },
     "MLFLOW_TRACKING_URI": {
       "type": "string",
       "description": "MLflow tracking server URI",
@@ -21,22 +37,6 @@
       "type": "string",
       "description": "MLflow prompt version to fetch (alias or number)",
       "default": "latest"
-    },
-    "MODEL_NAME": {
-      "type": "string",
-      "description": "Name of the model to be used",
-      "default": "llama32",
-      "minLength": 1
-    },
-    "LLM_ENDPOINT": {
-      "type": "string",
-      "description": "Endpoint URL for the LLM service",
-      "default": ""
-    },
-    "BACKEND_ENDPOINT": {
-      "type": "string",
-      "description": "Endpoint URL for the backend service",
-      "default": ""
     },
     "image": {
       "type": "object",
@@ -57,16 +57,6 @@
       },
       "required": ["name", "tag"],
       "additionalProperties": false
-    },
-    "chart_path": {
-      "type": "string",
-      "description": "Target namespace for deployment (format: userX-environment)",
-      "examples": []
-    },
-    "repo_url": {
-      "type": "string",
-      "description": "Target namespace for deployment (format: userX-environment)",
-      "examples": []
     }
   },
   "required": [

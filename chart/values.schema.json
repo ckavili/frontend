@@ -4,11 +4,23 @@
   "title": "Canopy UI Helm Chart Values Schema",
   "description": "Schema for validating values.yaml configuration for the Canopy UI Helm chart",
   "properties": {
-    "SYSTEM_PROMPT": {
+    "MLFLOW_TRACKING_URI": {
       "type": "string",
-      "description": "System prompt to be used by the application",
-      "default": "Summarize this text.",
+      "description": "MLflow tracking server URI",
+      "examples": [
+        "https://mlflow.apps.example.com/mlflow"
+      ]
+    },
+    "MLFLOW_PROMPT_NAME": {
+      "type": "string",
+      "description": "MLflow prompt registry name to fetch the system prompt",
+      "default": "summarization",
       "minLength": 1
+    },
+    "MLFLOW_PROMPT_VERSION": {
+      "type": "string",
+      "description": "MLflow prompt version to fetch (alias or number)",
+      "default": "latest"
     },
     "MODEL_NAME": {
       "type": "string",
@@ -58,7 +70,8 @@
     }
   },
   "required": [
-    "SYSTEM_PROMPT",
+    "MLFLOW_TRACKING_URI",
+    "MLFLOW_PROMPT_NAME",
     "MODEL_NAME"
   ],
   "additionalProperties": false

@@ -1,4 +1,5 @@
 import os
+import uuid
 import requests
 import json
 import streamlit as st
@@ -47,6 +48,18 @@ def submit_ab_feedback(input_text, response_a, response_b, preference, prompt_ma
         return resp.json()
     except Exception as e:
         return {"error": str(e)}
+
+def backend_call(endpoint, payload, session_id, stream=True, timeout=120):
+    """Make an HTTP call to the backend."""
+    headers = {"Content-Type": "application/json", "X-Session-Id": session_id}
+    return requests.post(
+        urljoin(BACKEND_ENDPOINT, endpoint),
+        json=payload,
+        headers=headers,
+        stream=stream,
+        timeout=timeout,
+    )
+
 
 # Cache feature flags to avoid repeated requests
 @st.cache_data(ttl=30)  # Cache for 30 seconds (checks more frequently)
@@ -105,6 +118,10 @@ feature = st.sidebar.radio(
     feature_options,
     index=0
 )
+
+# Initialize session_id once for all features
+if "session_id" not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())
 
 # Main view depending on feature
 st.markdown("""
@@ -278,19 +295,12 @@ if feature == "Summarization":
                             ""
                         )
                         payload = {"prompt": last_user_msg}
-                        headers = {"Content-Type": "application/json"}
 
                         response_a = ""
                         response_b = ""
                         ab_mapping = {}
 
-                        with requests.post(
-                            urljoin(BACKEND_ENDPOINT, "/summarize/ab"),
-                            json=payload,
-                            headers=headers,
-                            stream=True,
-                            timeout=120
-                        ) as response:
+                        with backend_call("/summarize/ab", payload, st.session_state.session_id) as response:
                             response.raise_for_status()
 
                             for line in response.iter_lines():
@@ -357,16 +367,9 @@ if feature == "Summarization":
                     # Fetch the response
                     try:
                         messages = [{"role": msg["role"], "content": msg["content"]} for msg in st.session_state.chat_history]
-                        payload = {"messages": messages}
-                        headers = {"Content-Type": "application/json"}
+                        payload = {"messages": messages, "session_id": st.session_state.session_id}
 
-                        with requests.post(
-                            urljoin(BACKEND_ENDPOINT, "/summarize/chat"),
-                            json=payload,
-                            headers=headers,
-                            stream=True,
-                            timeout=120
-                        ) as response:
+                        with backend_call("/summarize/chat", payload, st.session_state.session_id) as response:
                             response.raise_for_status()
                             assistant_response = ""
 
@@ -429,21 +432,21 @@ if feature == "Summarization":
 
         user_input = st.text_area("Your message:", height=100, key=f"chat_input_{st.session_state.input_key}", placeholder="Type your message here...")
 
-        col1, col2, col3 = st.columns([2, 1, 1])
-        with col1:
-            # Calculate tokens based on entire conversation + current message
-            total_conversation = "\n".join([msg["content"] for msg in st.session_state.chat_history])
-            total_text = total_conversation + "\n" + user_input
-            approx_token_count = len(total_text) // 4
-            tokens_left = MAX_TOKENS - approx_token_count - 50
-            color = "red" if tokens_left <= 0 else ("orange" if tokens_left < 100 else "green")
-            st.markdown(f"<span style='color:{color}; font-size: 0.9em;'>🧮 Tokens left (conversation): {tokens_left}</span>", unsafe_allow_html=True)
+        # Calculate tokens based on entire conversation + current message
+        total_conversation = "\n".join([msg["content"] for msg in st.session_state.chat_history])
+        total_text = total_conversation + "\n" + user_input
+        approx_token_count = len(total_text) // 4
+        tokens_left = MAX_TOKENS - approx_token_count - 50
+        color = "red" if tokens_left <= 0 else ("orange" if tokens_left < 100 else "green")
+        st.markdown(f"<span style='color:{color}; font-size: 0.9em;'>Tokens left (conversation): {tokens_left}</span>", unsafe_allow_html=True)
 
-        with col2:
-            clear_chat = st.button("🗑️ Clear Chat", key="clear_chat")
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            clear_chat = st.button("🗑️ Clear Chat", key="clear_chat", use_container_width=True)
             if clear_chat:
                 st.session_state.chat_history = []
                 st.session_state.awaiting_response = False
+                st.session_state.session_id = str(uuid.uuid4())
                 st.session_state.ab_response_a = None
                 st.session_state.ab_response_b = None
                 st.session_state.ab_mapping = None
@@ -451,8 +454,8 @@ if feature == "Summarization":
                 st.session_state.input_key += 1
                 st.rerun()
 
-        with col3:
-            send_button = st.button("Send 💬", key="send_message", type="primary")
+        with col2:
+            send_button = st.button("Send 💬", key="send_message", type="primary", use_container_width=True)
 
         # Check if we need to start streaming (phase 2)
         if st.session_state.get("start_streaming", False):
@@ -514,17 +517,8 @@ elif feature == "Information Search":
                         payload = {
                             "prompt": user_input
                         }
-                        headers = {
-                            "Content-Type": "application/json",
-                        }
 
-                        with requests.post(
-                            urljoin(BACKEND_ENDPOINT, "/information-search"),
-                            json=payload,
-                            headers=headers,
-                            stream=True,
-                            timeout=120
-                        ) as response:
+                        with backend_call("/information-search", payload, st.session_state.session_id) as response:
                             response.raise_for_status()
                             answer = ""
                             st.success("Here's your Information Search answer:")
@@ -542,7 +536,6 @@ elif feature == "Information Search":
                                         if delta:
                                             answer += delta
                                             answer_box.text_area("Information Search Answer", answer, height=200)
-
                     except Exception as e:
                         st.error(f"Something went wrong: {e}")
 
@@ -574,15 +567,8 @@ elif feature == "Student Assistant":
                 with st.spinner("Thinking..."):
                     try:
                         payload = {"prompt": user_input}
-                        headers = {"Content-Type": "application/json"}
 
-                        with requests.post(
-                            urljoin(BACKEND_ENDPOINT, "/student-assistant"),
-                            json=payload,
-                            headers=headers,
-                            stream=True,
-                            timeout=120
-                        ) as response:
+                        with backend_call("/student-assistant", payload, st.session_state.session_id) as response:
                             response.raise_for_status()
 
                             # Create containers for different sections
@@ -677,17 +663,8 @@ elif feature == "Socratic Tutor":
                         payload = {
                             "prompt": user_input
                         }
-                        headers = {
-                            "Content-Type": "application/json",
-                        }
 
-                        with requests.post(
-                            urljoin(BACKEND_ENDPOINT, "/socratic-tutor"),
-                            json=payload,
-                            headers=headers,
-                            stream=True,
-                            timeout=120
-                        ) as response:
+                        with backend_call("/socratic-tutor", payload, st.session_state.session_id) as response:
                             response.raise_for_status()
                             tutor_response = ""
                             st.success("Here's what your tutor has to say:")

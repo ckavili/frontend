@@ -20,6 +20,14 @@
       "description": "Endpoint URL for the backend service",
       "default": ""
     },
+    "chart_path": {
+      "type": "string",
+      "description": "Path to the Helm chart in the repository"
+    },
+    "repo_url": {
+      "type": "string",
+      "description": "URL of the source repository"
+    },
     "MLFLOW_TRACKING_URI": {
       "type": "string",
       "description": "MLflow tracking server URI",

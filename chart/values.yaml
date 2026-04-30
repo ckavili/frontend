@@ -7,4 +7,4 @@ MLFLOW_PROMPT_NAME: "summarization"
 MLFLOW_PROMPT_VERSION: "latest"
 image:
   name: "canopy-ui"
-  tag: "simple-0.3"
+  tag: "simple-0.5"

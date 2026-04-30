@@ -9,7 +9,7 @@ from urllib.parse import urljoin
 # Load environment variables
 BACKEND_ENDPOINT = os.getenv("BACKEND_ENDPOINT", "http://localhost:8000")
 
-def submit_feedback(input_text, response_text, rating, feature="summarize"):
+def submit_feedback(input_text, response_text, rating, feature="summarization"):
     """Submit feedback to the backend."""
     try:
         payload = {
@@ -28,7 +28,7 @@ def submit_feedback(input_text, response_text, rating, feature="summarize"):
     except Exception as e:
         return {"error": str(e)}
 
-def submit_ab_feedback(input_text, response_a, response_b, preference, prompt_mapping, feature="summarize"):
+def submit_ab_feedback(input_text, response_a, response_b, preference, prompt_mapping, feature="summarization"):
     """Submit A/B comparison feedback to the backend."""
     try:
         payload = {
@@ -280,7 +280,7 @@ if feature == "Summarization":
             # Handle streaming response if awaiting
             if st.session_state.awaiting_response:
                 if feature_flags.get("ab_testing", False):
-                    # A/B mode: stream two responses side by side from /summarize/ab
+                    # A/B mode: stream two responses side by side from /summarization/ab
                     col_a, col_b = st.columns(2)
                     with col_a:
                         st.markdown("**Response A**")
@@ -300,7 +300,7 @@ if feature == "Summarization":
                         response_b = ""
                         ab_mapping = {}
 
-                        with backend_call("/summarize/ab", payload, st.session_state.session_id) as response:
+                        with backend_call("/summarization/ab", payload, st.session_state.session_id) as response:
                             response.raise_for_status()
 
                             for line in response.iter_lines():
@@ -369,7 +369,7 @@ if feature == "Summarization":
                         messages = [{"role": msg["role"], "content": msg["content"]} for msg in st.session_state.chat_history]
                         payload = {"messages": messages, "session_id": st.session_state.session_id}
 
-                        with backend_call("/summarize/chat", payload, st.session_state.session_id) as response:
+                        with backend_call("/summarization/chat", payload, st.session_state.session_id) as response:
                             response.raise_for_status()
                             assistant_response = ""
 

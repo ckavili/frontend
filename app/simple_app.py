@@ -31,7 +31,7 @@ if os.path.exists(SA_TOKEN_PATH):
         os.environ["MLFLOW_TRACKING_TOKEN"] = f.read().strip()
 
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-mlflow.set_experiment("canopy-experiment")
+mlflow.set_experiment("summarization")
 mlflow.openai.autolog()
 
 client = OpenAI(

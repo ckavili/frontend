@@ -368,6 +368,22 @@ if feature == "Summarization":
 
                 else:
                     streaming_placeholder = st.empty()
+                    streaming_placeholder.markdown("""
+                    <div style='background-color: #f1f8e9; padding: 12px 15px; border-radius: 15px; margin: 8px 0; max-width: 80%;'>
+                        <strong style='color: #558b2f;'>Assistant</strong><br>
+                        <span style='display:inline-flex; gap:4px; margin-top:4px;'>
+                            <span style='width:8px;height:8px;border-radius:50%;background:#558b2f;animation:canopy-dot 1.4s infinite both;animation-delay:0s;'></span>
+                            <span style='width:8px;height:8px;border-radius:50%;background:#558b2f;animation:canopy-dot 1.4s infinite both;animation-delay:0.2s;'></span>
+                            <span style='width:8px;height:8px;border-radius:50%;background:#558b2f;animation:canopy-dot 1.4s infinite both;animation-delay:0.4s;'></span>
+                        </span>
+                    </div>
+                    <style>
+                    @keyframes canopy-dot {
+                        0%, 80%, 100% { opacity: 0.15; transform: scale(0.8); }
+                        40% { opacity: 1; transform: scale(1); }
+                    }
+                    </style>
+                    """, unsafe_allow_html=True)
 
                     # Fetch the response
                     try:

@@ -1,13 +1,33 @@
 import os
+import time
 import uuid
 import requests
 import json
 import streamlit as st
 from PIL import Image
 from urllib.parse import urljoin
+from prometheus_client import start_http_server, Counter, Histogram
 
 # Load environment variables
 BACKEND_ENDPOINT = os.getenv("BACKEND_ENDPOINT", "http://localhost:8000")
+
+@st.cache_resource
+def _init_metrics():
+    start_http_server(8000)
+    requests_total = Counter(
+        "http_requests_total",
+        "Total requests made to the backend",
+        ["endpoint", "status"],
+    )
+    duration = Histogram(
+        "http_server_duration_milliseconds",
+        "Backend call duration in milliseconds",
+        ["endpoint"],
+        buckets=[10, 25, 50, 100, 250, 500, 1000, 2500, 5000],
+    )
+    return requests_total, duration
+
+http_requests_total, http_server_duration_milliseconds = _init_metrics()
 
 def submit_feedback(trace_id, rating, feature="summarization"):
     """Attach thumbs up/down feedback to an MLflow trace."""
@@ -38,13 +58,24 @@ def submit_ab_feedback(trace_id_a, trace_id_b, preference, prompt_mapping, featu
 def backend_call(endpoint, payload, session_id, stream=True, timeout=120):
     """Make an HTTP call to the backend."""
     headers = {"Content-Type": "application/json", "X-Session-Id": session_id}
-    return requests.post(
-        urljoin(BACKEND_ENDPOINT, endpoint),
-        json=payload,
-        headers=headers,
-        stream=stream,
-        timeout=timeout,
-    )
+    start = time.time()
+    try:
+        resp = requests.post(
+            urljoin(BACKEND_ENDPOINT, endpoint),
+            json=payload,
+            headers=headers,
+            stream=stream,
+            timeout=timeout,
+        )
+        http_requests_total.labels(endpoint=endpoint, status=resp.status_code).inc()
+        return resp
+    except Exception:
+        http_requests_total.labels(endpoint=endpoint, status="error").inc()
+        raise
+    finally:
+        http_server_duration_milliseconds.labels(endpoint=endpoint).observe(
+            (time.time() - start) * 1000
+        )
 
 
 # Cache feature flags to avoid repeated requests

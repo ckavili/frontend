@@ -27,6 +27,7 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 8501
+            - containerPort: 8000
           env:
            {{- if not .Values.BACKEND_ENDPOINT}}
             - name: LLM_ENDPOINT
@@ -45,18 +46,4 @@ spec:
               value: "{{ .Values.MLFLOW_PROMPT_VERSION | default "latest" }}"
             - name: MLFLOW_TRACKING_INSECURE_TLS
               value: "true"
-            - name: OTEL_TRACES_SAMPLER_ARG
-              value: "1.0"
-            - name: OTEL_LOGS_EXPORTER
-              value: "none"
-            # TRACES go to user's toolings namespace collector
-            - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
-              value: "http://trace-collector-collector.{{ .Values.toolingsNamespace | default (printf "%s-toolings" (trimSuffix "-canopy" .Release.Namespace | trimSuffix "-test" | trimSuffix "-prod")) }}.svc.cluster.local:4318/v1/traces"
-            # METRICS stay with RHOAI (unchanged)
-            - name: OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
-              value: "http://data-science-collector-collector-headless.redhat-ods-monitoring.svc.cluster.local:4318/v1/metrics"
-            # General endpoint for traces
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "http://trace-collector-collector.{{ .Values.toolingsNamespace | default (printf "%s-toolings" (trimSuffix "-canopy" .Release.Namespace | trimSuffix "-test" | trimSuffix "-prod")) }}.svc.cluster.local:4318"
-            - name: TELEMETRY_SINKS
-              value: "otel_trace"
+

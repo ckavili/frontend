@@ -1,5 +1,7 @@
 import os
 import uuid
+import queue
+import threading
 import streamlit as st
 from PIL import Image
 from openai import OpenAI
@@ -52,7 +54,7 @@ SYSTEM_PROMPT = get_system_prompt()
 
 
 @mlflow.trace
-def chat_completion(messages: list[dict], session_id: str) -> str:
+def chat_completion(messages: list[dict], session_id: str, q: queue.Queue) -> str:
     mlflow.update_current_trace(
         metadata={
             "mlflow.trace.session": session_id,
@@ -61,13 +63,21 @@ def chat_completion(messages: list[dict], session_id: str) -> str:
             "mlflow.trace.session": session_id,
         },
     )
-    response = client.chat.completions.create(
+    stream = client.chat.completions.create(
         model=MODEL_NAME,
         messages=messages,
         max_tokens=2048,
         temperature=0.9,
+        stream=True,
     )
-    return response.choices[0].message.content
+    full_response = ""
+    for chunk in stream:
+        content = chunk.choices[0].delta.content
+        if content is not None:
+            full_response += content
+            q.put(content)
+    q.put(None)
+    return full_response
 
 
 
@@ -149,17 +159,30 @@ if feature == "Summarization":
 
         # Handle response if awaiting
         if st.session_state.awaiting_response:
-            # Fetch the response
             try:
-                # Build messages with conversation history
                 messages = [{"role": "system", "content": SYSTEM_PROMPT}]
                 for msg in st.session_state.chat_history:
                     messages.append({"role": msg["role"], "content": msg["content"]})
 
-                assistant_response = chat_completion(messages, st.session_state.session_id) or ""
+                q = queue.Queue()
+                threading.Thread(
+                    target=chat_completion,
+                    args=(messages, st.session_state.session_id, q),
+                    daemon=True,
+                ).start()
 
-                if assistant_response:
-                    st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
+                def stream_chunks():
+                    while True:
+                        chunk = q.get()
+                        if chunk is None:
+                            break
+                        yield chunk
+
+                st.markdown("<strong style='color: #558b2f;'>Assistant</strong>", unsafe_allow_html=True)
+                full_response = st.write_stream(stream_chunks())
+
+                if full_response:
+                    st.session_state.chat_history.append({"role": "assistant", "content": full_response})
                 st.session_state.awaiting_response = False
                 st.rerun()
 

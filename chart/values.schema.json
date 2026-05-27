@@ -28,6 +28,11 @@
       "type": "string",
       "description": "URL of the source repository"
     },
+    "target_revision": {
+      "type": "string",
+      "description": "Git branch, tag, or commit to deploy from",
+      "default": "main"
+    },
     "MLFLOW_TRACKING_URI": {
       "type": "string",
       "description": "MLflow tracking server URI",
